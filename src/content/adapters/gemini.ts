@@ -161,7 +161,7 @@ function hasNearbyDownloadButton(img: HTMLImageElement): boolean {
 }
 
 function isLikelyGeminiImage(img: HTMLImageElement, url: string): boolean {
-    if (!url || url.startsWith('data:') || url.startsWith('blob:')) {
+    if (!url || url.startsWith('data:')) {
         return false;
     }
 
@@ -169,7 +169,14 @@ function isLikelyGeminiImage(img: HTMLImageElement, url: string): boolean {
         return false;
     }
 
-    if (img.closest(IMAGE_CONTAINER_SELECTOR)) {
+    const hasImageContainer = img.closest(IMAGE_CONTAINER_SELECTOR) !== null;
+    const nearbyDownloadButton = hasNearbyDownloadButton(img);
+
+    if (url.startsWith('blob:')) {
+        return hasImageContainer || nearbyDownloadButton;
+    }
+
+    if (hasImageContainer) {
         return true;
     }
 
@@ -178,11 +185,11 @@ function isLikelyGeminiImage(img: HTMLImageElement, url: string): boolean {
     }
 
     const hasGoogleContentHost = GOOGLE_USER_CONTENT_PATTERN.test(url);
-    if (!hasGoogleContentHost && !hasNearbyDownloadButton(img)) {
+    if (!hasGoogleContentHost && !nearbyDownloadButton) {
         return false;
     }
 
-    if (hasNearbyDownloadButton(img)) {
+    if (nearbyDownloadButton) {
         return true;
     }
 
