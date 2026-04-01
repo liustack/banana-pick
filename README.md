@@ -1,4 +1,4 @@
-# banana-downloader
+# banana-pick
 
 English documentation. For Chinese users, see [README.zh-CN.md](README.zh-CN.md).
 
@@ -14,7 +14,7 @@ This project is published for personal learning purposes only and must not be us
 
 - In-page Shadow DOM panel (no popup page)
 - Site adapter architecture (`Gemini` / `NotebookLM` in separate files)
-- Gemini original-image download via native button click + fetch interception
+- Gemini original-image download via native button click + download-RPC interception
 - NotebookLM Infographic batch download via artifact viewer image URL capture
 - NotebookLM watermark cleanup via local-difference mask + column-sampling fallback
 - Batch timestamp filenames (`prefix_YYYYMMDD_HHmmss_N.png`)
@@ -30,7 +30,7 @@ This project is published for personal learning purposes only and must not be us
 
 | Layer | File | Runtime | Role |
 |-------|------|---------|------|
-| Interceptor | `public/download-interceptor.js` | Main World | Patches `window.fetch` for Gemini download chain, posts captured image with `captureId` |
+| Interceptor | `public/download-interceptor.js` | Main World | Patches `XMLHttpRequest` and `window.fetch` for Gemini download chain, posts captured image with `captureId` |
 | Content Script | `src/content/index.ts` | Isolated World | Shared panel + adapter orchestration |
 | Background | `src/background/index.ts` | Service Worker | Download processing, optional watermark removal, native blob-download suppression |
 
@@ -81,7 +81,7 @@ src/
   types.ts                             # Shared message/data types
   assets/                              # Watermark reference images
 public/
-  download-interceptor.js              # Main-world fetch patch for Gemini
+  download-interceptor.js              # Main-world Gemini download-chain interceptor
   rules.json                           # Declarative net request CORS rules
   icons/                               # Extension icons
 docs/                                  # Operational docs

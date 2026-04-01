@@ -1,5 +1,5 @@
 ---
-summary: 'Download interception architecture: fetch patch, simulated clicks, download suppression'
+summary: 'Download interception architecture: XHR/fetch interception, simulated clicks, download suppression'
 read_when:
   - Modifying the download flow or fetch interception logic
   - Debugging image downloads, duplicate downloads, or cross-world communication
@@ -97,7 +97,7 @@ INNER_JSON contains:
 
 ### 3.1 Core Idea
 
-Since we cannot construct the download request ourselves, we **piggyback on Gemini's own download logic** — trigger the native download button, let the page JS handle all RPC and redirect work, and intercept the fetched image blob at the final step.
+Since we cannot construct the download request ourselves, we **piggyback on Gemini's own download logic** — trigger the native download button, let the page JS issue the `c8o8Fe` RPC, extract the signed `gg-dl` URL from the RPC response, then follow the download chain ourselves until we capture the final image blob.
 
 ### 3.2 Architecture Diagram
 
@@ -107,10 +107,12 @@ Since we cannot construct the download request ourselves, we **piggyback on Gemi
 │                                                         │
 │  download-interceptor.js (injected via <script src>)    │
 │  ┌─────────────────────────────────────────────────┐    │
-│  │ Patch window.fetch                              │    │
-│  │    - Intercept /gg-dl/ and /rd-gg-dl/ responses │    │
-│  │    - Clone blob when content-type is image/*    │    │
-│  │    - Convert to dataURL, send via postMessage   │    │
+│  │ Patch XMLHttpRequest + window.fetch             │    │
+│  │    - Watch c8o8Fe download RPC responses        │    │
+│  │    - Extract signed gg-dl URL from response     │    │
+│  │    - Follow gg-dl -> rd-gg-dl -> image/* chain  │    │
+│  │    - Convert blob to dataURL, send via          │    │
+│  │      postMessage                                │    │
 │  └─────────────────────────────────────────────────┘    │
 │                                  │ postMessage          │
 │                                  ▼                      │
@@ -160,7 +162,7 @@ Since we cannot construct the download request ourselves, we **piggyback on Gemi
 
 | File | Runtime | Responsibility |
 |------|---------|----------------|
-| `public/download-interceptor.js` | Main World | Patch fetch to capture original image blobs |
+| `public/download-interceptor.js` | Main World | Patch XHR/fetch and follow Gemini download chain to capture original image blobs |
 | `src/content/index.ts` | Isolated World | UI panel + download flow orchestration |
 | `src/background/index.ts` | Service Worker | Watermark removal + file save + native download suppression |
 
@@ -409,7 +411,9 @@ button.click()
   → Angular reads token from memory (we don't need to know the token)
   → Angular constructs c8o8Fe RPC request (we don't need to know the format)
   → Server returns signed URL (we don't need to know how it's signed)
-  → fetch redirect chain (we intercept the final image blob here)
+  → download RPC returns signed URL
+  → interceptor follows redirect/text chain
+  → interceptor captures the final image blob here
 ```
 
 By letting Gemini's own JS handle everything from token reading to RPC invocation, we **treat the entire complex authentication and request chain as a black box**, intercepting only the final product (the original PNG blob). This means:
@@ -439,7 +443,7 @@ We need to **read the response body** (image blob data), but MV3's Background Se
 
 `chrome.webRequest` is still available in MV3 but with limited capabilities (no longer supports blocking mode for `onBeforeRequest`) and cannot directly access response bodies.
 
-Therefore, patching `window.fetch` in the main world is **the only way to access image response bodies without requiring additional permissions**.
+Therefore, main-world interception remains the practical way to access download response bodies without adding heavier permissions, but the implementation should not assume Gemini always uses `window.fetch`. The current interceptor handles both `XMLHttpRequest`-initiated RPC responses and any direct `fetch` access to `/gg-dl/` or `/rd-gg-dl/`.
 
 ### 7.3 Why CORS Rules Are in the Background
 
@@ -468,7 +472,7 @@ Page-level fetch requests are subject to CORS restrictions. Gemini's download re
 
 | Need | Location | Reason |
 |------|----------|--------|
-| Intercept image blob | Main World (fetch patch) | Must read response body |
+| Intercept image blob | Main World (XHR/fetch patch) | Must read response body and follow the signed download chain |
 | CORS header modification | Background (declarativeNetRequest) | Declarative API excels at header operations |
 | Suppress native downloads | Background (chrome.downloads.onCreated) | Browser-level API, cannot be bypassed by page |
 | Watermark removal + save | Background (Service Worker) | Has full API permissions |
@@ -508,8 +512,9 @@ Page-level fetch requests are subject to CORS restrictions. Gemini's download re
 
 1. **Exclude**: images inside `user-query-file-preview` or `user-query-file-carousel` (user-uploaded reference images)
 2. **Include**: images inside `button.image-button` or `.overlay-container`
-3. **Include**: URLs matching `/gg/`, `/gg-dl/`, `/rd-gg/`, `/aip-dl/` path patterns
-4. **Fallback**: nearby "Download full size image" button exists and image size >= 120 px
+3. **Include**: `blob:` thumbnails only when they are inside Gemini-generated image containers or near the native "Download full size image" button
+4. **Include**: URLs matching `/gg/`, `/gg-dl/`, `/rd-gg/`, `/aip-dl/` path patterns
+5. **Fallback**: nearby "Download full size image" button exists and image size >= 120 px
 
 **Note**: User-uploaded reference image URLs may also match the `/gg/` path pattern (they're also hosted on Google CDN), so **container exclusion checks must run before URL matching**.
 
@@ -545,14 +550,14 @@ The approach depends on the following DOM structures and selectors, which may ne
 - `user-query-file-preview` / `user-query-file-carousel` user reference image containers
 - `single-image.generated-image` generated image container
 
-### 9.4 Fetch Patch Compatibility
+### 9.4 XHR / Fetch Patch Compatibility
 
-The interceptor patches `window.fetch` and must be injected before the page's own JS loads. Currently achieved by injecting a `<script src>` tag from the content script at load time.
+The interceptor patches `XMLHttpRequest` and `window.fetch` and must be injected before Gemini's own download code runs. Currently achieved by injecting a `<script src>` tag from the content script at load time.
 
 Potential risks:
-- If the page has a Service Worker that caches fetch requests, it may bypass our patch
-- The page could detect the patch by comparing `window.fetch === nativeFetch` (Gemini currently does not do this)
-- If the page saves a reference to the original `fetch` before our injection, our patch won't affect those calls
+- If the page has a Service Worker or worker-based download path, it may bypass our patch
+- The page could detect the patch by comparing `window.fetch === nativeFetch` or by inspecting `XMLHttpRequest.prototype`
+- If the page saves references to the original `fetch` / `XMLHttpRequest` methods before our injection, our patch won't affect those calls
 
 ### 9.5 Suppression Window Timing Risk
 

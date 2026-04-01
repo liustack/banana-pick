@@ -20,7 +20,7 @@ function isSupportedTab(tab: chrome.tabs.Tab): boolean {
 function sendPanelMessage(tabId: number, type: 'TOGGLE_PANEL' | 'OPEN_PANEL'): void {
     chrome.tabs.sendMessage(tabId, { type }, () => {
         if (chrome.runtime.lastError) {
-            console.debug('[Banana Downloader] sendPanelMessage failed:', chrome.runtime.lastError.message);
+            console.debug('[Banana Pick] sendPanelMessage failed:', chrome.runtime.lastError.message);
         }
     });
 }
@@ -202,4 +202,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
 });
 
-console.log('[Banana Downloader] Background service worker loaded');
+console.log('[Banana Pick] Background service worker loaded');

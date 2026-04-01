@@ -1,4 +1,4 @@
-# banana-downloader Project Context
+# banana-pick Project Context
 
 ## Project Overview
 This is a Chrome extension that batch-downloads generated visual artifacts from:
@@ -18,7 +18,7 @@ The UI is rendered as an in-page Shadow DOM panel, not in a popup page.
 2. In-page panel: click extension icon to toggle panel, select/unselect, set filename prefix
 3. Gemini batch download:
    - simulate native "Download full size" click
-   - intercept final image response in main world
+   - intercept Gemini download RPC and final image response in main world
    - send to background for watermark removal + save
 4. NotebookLM batch download:
    - detect Infographic artifact entries
@@ -38,7 +38,7 @@ The UI is rendered as an in-page Shadow DOM panel, not in a popup page.
 
 | Layer | File | Runtime | Role |
 |-------|------|---------|------|
-| Interceptor | `public/download-interceptor.js` | Main World | Patch `window.fetch` for Gemini download chain; emit `GBD_IMAGE_CAPTURED` with `captureId` |
+| Interceptor | `public/download-interceptor.js` | Main World | Patch `XMLHttpRequest` / `window.fetch` for Gemini download chain; emit `GBD_IMAGE_CAPTURED` with `captureId` |
 | Content Script | `src/content/index.ts` | Isolated World | Shared panel + adapter orchestration |
 | Background | `src/background/index.ts` | Service Worker | Download processing, optional watermark removal, native blob suppression |
 
@@ -63,7 +63,8 @@ The UI is rendered as an in-page Shadow DOM panel, not in a popup page.
 
 ## Key Implementation Notes
 - Gemini display URLs (`/gg/`) and download URLs (`/gg-dl/`, `/rd-gg-dl/`) use different signed tokens.
-- Gemini original capture is tied to native click flow; extension piggybacks and intercepts final image response.
+- Gemini page thumbnails may now be `blob:` URLs; detection relies on Gemini image containers and nearby native download buttons.
+- Gemini original capture is tied to native click flow; extension piggybacks on the `c8o8Fe` download RPC and follows the signed `gg-dl` chain to the final image response.
 - Gemini capture is matched by `captureId` to prevent late-response mismatch after timeout.
 - NotebookLM infographic flow uses artifact button detection + viewer image URL extraction (`/notebooklm/` or `/rd-notebooklm/`).
 - NotebookLM watermark cleanup uses local-difference masking with full-region column-fill fallback.

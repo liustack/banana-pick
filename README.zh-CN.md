@@ -1,4 +1,4 @@
-# banana-downloader
+# banana-pick
 
 中文文档。英文文档请见 [README.md](README.md)。
 
@@ -14,7 +14,7 @@
 
 - 页面内 Shadow DOM 面板（不依赖 popup）
 - 站点适配器架构（`Gemini` / `NotebookLM` 分文件实现）
-- Gemini：模拟点击原生下载 + fetch 拦截获取原图
+- Gemini：模拟点击原生下载 + 下载 RPC 拦截获取原图
 - NotebookLM：打开信息图 Artifact 后抓取 viewer 图片 URL 批量下载
 - NotebookLM：局部差分掩码识别 + 逐列采样兜底的水印清理
 - 批次时间戳命名，避免文件名冲突（`prefix_YYYYMMDD_HHmmss_N.png`）
@@ -30,7 +30,7 @@
 
 | 层 | 文件 | 运行环境 | 职责 |
 |----|------|----------|------|
-| 拦截器 | `public/download-interceptor.js` | Main World | Gemini 下载链路 fetch 补丁，携带 `captureId` 回传图片 |
+| 拦截器 | `public/download-interceptor.js` | Main World | Gemini 下载链路 `XMLHttpRequest` / `fetch` 补丁，携带 `captureId` 回传图片 |
 | Content Script | `src/content/index.ts` | Isolated World | 通用面板 + 适配器编排 |
 | Background | `src/background/index.ts` | Service Worker | 下载处理、可选去水印、原生 blob 下载抑制 |
 
@@ -81,7 +81,7 @@ src/
   types.ts                             # 共享消息/数据类型
   assets/                              # 水印参考图
 public/
-  download-interceptor.js              # Gemini 主世界 fetch 补丁
+  download-interceptor.js              # Gemini 主世界下载链拦截器
   rules.json                           # DNR CORS 规则
   icons/                               # 扩展图标
 docs/

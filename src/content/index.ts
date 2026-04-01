@@ -2,14 +2,14 @@ import type { ImageInfo, WatermarkMode } from '../types';
 import { getAdapterForLocation } from './adapters';
 import type { DownloadDispatcher } from './adapters/types';
 
-console.log('[Banana Downloader] Content script injected');
+console.log('[Banana Pick] Content script injected');
 
 const PANEL_HOST_ID = 'gbd-panel-host';
 
 const activeAdapter = getAdapterForLocation(window.location);
 
 if (!activeAdapter) {
-    console.warn('[Banana Downloader] No adapter matched for', window.location.hostname);
+    console.warn('[Banana Pick] No adapter matched for', window.location.hostname);
 }
 
 type PanelStatus = 'idle' | 'loading' | 'ready' | 'error' | 'downloading' | 'done';
@@ -336,7 +336,7 @@ function ensurePanel(): void {
       </style>
       <div class="panel hidden" data-role="panel">
         <div class="header">
-          <div class="title" data-role="title">Banana 下载器</div>
+          <div class="title" data-role="title">Banana Pick</div>
           <button class="close" type="button" data-role="close">×</button>
         </div>
         <div class="status" data-role="status"></div>
@@ -483,7 +483,7 @@ function renderPanel(): void {
         return;
     }
 
-    elements.title.textContent = activeAdapter?.panelTitle || 'Banana 下载器';
+    elements.title.textContent = activeAdapter?.panelTitle || 'Banana Pick';
     elements.selectAll.checked = allSelected;
     elements.selectText.textContent = `全选 (${selectedCount}/${state.images.length})`;
     elements.prefixInput.value = state.prefix;
@@ -681,7 +681,7 @@ async function startDownload(): Promise<void> {
                 await activeAdapter.downloadImage(image, filename, downloadDispatcher);
                 state.result.succeeded++;
             } catch (error) {
-                console.error(`[Banana Downloader] Failed to download item ${i + 1}:`, error);
+                console.error(`[Banana Pick] Failed to download item ${i + 1}:`, error);
                 state.result.failed++;
             }
 
@@ -698,7 +698,7 @@ async function startDownload(): Promise<void> {
             try {
                 await activeAdapter.afterBatchDownload(downloadDispatcher);
             } catch (error) {
-                console.error('[Banana Downloader] afterBatchDownload failed:', error);
+                console.error('[Banana Pick] afterBatchDownload failed:', error);
             }
         }
     }
@@ -730,4 +730,4 @@ chrome.runtime.onMessage.addListener((message) => {
     return false;
 });
 
-console.log('[Banana Downloader] Panel bridge ready');
+console.log('[Banana Pick] Panel bridge ready');

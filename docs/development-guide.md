@@ -1,4 +1,4 @@
-# banana-downloader Development Guide
+# banana-pick Development Guide
 
 ## 1. Current Architecture
 
@@ -47,7 +47,9 @@ Notes:
 
 ### 2.4 `public/download-interceptor.js`
 
-- Main-world fetch patch for Gemini download chain
+- Main-world Gemini download-chain interceptor
+- Watches the `c8o8Fe` download RPC via `XMLHttpRequest`
+- Follows `gg-dl` -> `rd-gg-dl` -> final `image/*` responses
 - Uses `captureId` mapping (`GBD_CAPTURE_EXPECT` / `GBD_CAPTURE_CANCEL`)
 - Posts `GBD_IMAGE_CAPTURED` back to content script
 
@@ -58,7 +60,7 @@ Notes:
 1. Scan generated images from conversation DOM
 2. User selects images in panel
 3. For each image: find native download button and click
-4. Interceptor captures final image response (`image/*`) and posts data URL with `captureId`
+4. Interceptor captures the download RPC result, follows the signed download chain, and posts the final image data URL with `captureId`
 5. Content script sends `DOWNLOAD_IMAGE` to background
 6. Background removes watermark and saves file
 
@@ -104,6 +106,7 @@ Load extension in Chrome:
 
 - Scroll page manually once, then reopen panel
 - Check content-script logs for adapter scan results
+- On recent Gemini builds, generated-image thumbnails may use `blob:` URLs; detection depends on Gemini image containers and native download-button proximity
 
 ### 6.3 Download failures
 
