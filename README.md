@@ -16,13 +16,22 @@ This project is published for personal learning purposes only and must not be us
 - Site adapter architecture (`Gemini` / `NotebookLM` in separate files)
 - Gemini original-image download via native button click + download-RPC interception
 - NotebookLM Infographic batch download via artifact viewer image URL capture
-- NotebookLM watermark cleanup via local-difference mask + column-sampling fallback
+- NotebookLM watermark cleanup via local-difference mask + bottom-strip column sampling fallback
 - Batch timestamp filenames (`prefix_YYYYMMDD_HHmmss_N.png`)
 - Reliability improvements for long pages / lazy loading:
   - Scroll preloading before scan and download
   - Retry with targeted container sweep
   - Capture ID mapping to avoid blob mismatch after timeout
   - Runtime message timeout guard
+
+## Maintenance Guardrails
+
+- Gemini stable path: click the native "Download full size" button, let the main-world interceptor capture the final image response, then let the background worker remove the watermark and save the processed file.
+- Do not casually replace the Gemini main flow with display-URL rewriting, manual `gg-dl` / `rd-gg-dl` follow-chain fetches, or background-only signed-URL reconstruction. Those experiments previously caused CORS noise, thumbnail downloads, duplicate native downloads, and watermark regressions.
+- The `Gemini XHR capture failed` warning alone is not proof that the main flow is broken. Treat final-image capture and saved-file quality as the source of truth.
+- NotebookLM stable path: detect the infographic entry, open the viewer, read the viewer image URL, then let the background worker `fetch(..., { credentials: 'include' })`, clean the NotebookLM watermark, and save the file.
+- Do not switch NotebookLM to `More -> Download` or browser-native download interception just to obtain an image URL unless the viewer path is truly unavailable. When NotebookLM changes its UI, update list/viewer selectors first and keep the direct-fetch main flow intact.
+- Any NotebookLM watermark change must be validated on both landscape and portrait exports. Fixes based on one orientation often reintroduce white/gray blocks or left-side residue in the other.
 
 ## Architecture
 

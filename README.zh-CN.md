@@ -16,13 +16,22 @@
 - 站点适配器架构（`Gemini` / `NotebookLM` 分文件实现）
 - Gemini：模拟点击原生下载 + 下载 RPC 拦截获取原图
 - NotebookLM：打开信息图 Artifact 后抓取 viewer 图片 URL 批量下载
-- NotebookLM：局部差分掩码识别 + 逐列采样兜底的水印清理
+- NotebookLM：局部差分掩码识别 + 底边采样列填充兜底的水印清理
 - 批次时间戳命名，避免文件名冲突（`prefix_YYYYMMDD_HHmmss_N.png`）
 - 长页面稳定性增强：
   - 扫描前/下载前滚动预热懒加载
   - 按滚动容器重试查找目标
   - `captureId` 关联拦截结果，避免超时后串图
   - `sendMessage` 超时保护，避免流程卡死
+
+## 维护约束
+
+- Gemini 当前稳定主流程是：点击原生“下载完整尺寸图片”按钮，由 Main World 拦截最终图片响应，再交给 Background 去水印并保存。
+- 不要随便把 Gemini 主流程改成显示图 URL 改写、页面侧手动追 `gg-dl` / `rd-gg-dl` 下载链，或后台自行重建签名 URL。这些尝试都真实引入过 CORS 噪音、缩略图下载、重复原生下载和去水印回退问题。
+- 控制台里单独出现 `Gemini XHR capture failed` 并不等于主流程坏了。判断标准应以最终是否抓到原图、保存文件是否正确为准。
+- NotebookLM 当前稳定主流程是：检测信息图条目，打开 viewer，读取 viewer 内的图片 URL，再由 Background 用 `fetch(..., { credentials: 'include' })` 拉原图、做 NotebookLM 专用去水印并保存。
+- 不要为了拿 URL 就把 NotebookLM 改成走 `More -> Download` 或浏览器原生下载拦截。NotebookLM 改版时，优先修列表选择器和 viewer 选择器，尽量不要动 direct fetch 主流程。
+- 任何 NotebookLM 去水印算法改动都必须同时验证横版和竖版导出。只按单一方向调参，很容易把另一类图重新改坏，出现白块、灰块或左侧残留。
 
 ## 架构
 

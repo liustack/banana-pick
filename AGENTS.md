@@ -64,10 +64,12 @@ The UI is rendered as an in-page Shadow DOM panel, not in a popup page.
 ## Key Implementation Notes
 - Gemini display URLs (`/gg/`) and download URLs (`/gg-dl/`, `/rd-gg-dl/`) use different signed tokens.
 - Gemini page thumbnails may now be `blob:` URLs; detection relies on Gemini image containers and nearby native download buttons.
-- Gemini original capture is tied to native click flow; extension piggybacks on the `c8o8Fe` download RPC and follows the signed `gg-dl` chain to the final image response.
+- Gemini original capture is tied to native click flow; the stable main path is native click -> main-world final-image capture -> background processing. Do not casually replace it with manual page-side `gg-dl` follow-chain fetches or background-only signed-URL reconstruction.
 - Gemini capture is matched by `captureId` to prevent late-response mismatch after timeout.
-- NotebookLM infographic flow uses artifact button detection + viewer image URL extraction (`/notebooklm/` or `/rd-notebooklm/`).
-- NotebookLM watermark cleanup uses local-difference masking with full-region column-fill fallback.
+- A standalone `Gemini XHR capture failed` warning is not enough to justify rewriting the main flow; confirm the final original-image capture path is actually broken first.
+- NotebookLM infographic flow uses artifact button detection + viewer image URL extraction (`/notebooklm/` or `/rd-notebooklm/`). Prefer fixing selectors over changing the direct-fetch flow.
+- Do not switch NotebookLM to `More -> Download` / native-download interception unless the viewer path is truly unavailable.
+- NotebookLM watermark cleanup uses local-difference masking with bottom-strip column sampling fallback, and must be validated on both landscape and portrait exports.
 - Background watermark removal mode is controlled per message (`watermarkMode`).
 - During Gemini batch, `chrome.downloads.onCreated` cancels duplicate `blob:` downloads not initiated by extension.
 

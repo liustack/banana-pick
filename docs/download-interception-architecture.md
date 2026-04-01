@@ -8,6 +8,16 @@ read_when:
 
 # Original Image Download Interception: Architecture & Decision Record
 
+## 0. Maintenance Guardrails
+
+Read this section before changing Gemini download code.
+
+- The stable Gemini main flow is still: native button click -> main-world interception of the final image response -> background watermark removal and save.
+- Do not casually re-architect Gemini around manual page-side fetches of the signed `gg-dl` / `rd-gg-dl` chain, background-only signed URL replay, or display-URL rewriting. Those variants were all explored and caused real regressions: CORS failures, thumbnail downloads, duplicate native downloads, or broken watermark removal.
+- Treat the final captured image blob and saved output as the authoritative success signal. A console warning around the XHR observer path is not, by itself, evidence that the production flow is broken.
+- If Gemini changes again, first try to fix DOM selectors, bridge timing, or interception timing. Only replace the architecture after proving the native-click + final-response-capture path is no longer viable.
+- Every Gemini download change must be verified against four outcomes together: original-size image, successful watermark removal, no duplicate native download, and no cross-image mismatch under retries/timeouts.
+
 ## 1. Background
 
 ### 1.1 Core Objective
@@ -98,6 +108,10 @@ INNER_JSON contains:
 ### 3.1 Core Idea
 
 Since we cannot construct the download request ourselves, we **piggyback on Gemini's own download logic** — trigger the native download button, let the page JS issue the `c8o8Fe` RPC, extract the signed `gg-dl` URL from the RPC response, then follow the download chain ourselves until we capture the final image blob.
+
+### 3.1.1 Current Maintenance Note
+
+The important invariant is not "we saw a signed URL in the XHR response"; the important invariant is "we captured the final original-image response without breaking the native flow". In practice, the XHR observer is only a helper/diagnostic path. Do not treat it as the primary download implementation target when refactoring.
 
 ### 3.2 Architecture Diagram
 

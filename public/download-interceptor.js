@@ -53,32 +53,6 @@
     return match ? match[0] : null;
   }
 
-  async function captureFromDownloadChain(startUrl, captureId) {
-    var currentUrl = startUrl;
-
-    for (var step = 0; step < 4; step++) {
-      var response = await _fetch.call(window, currentUrl, {
-        credentials: 'include'
-      });
-      var contentType = (response.headers.get('content-type') || '').toLowerCase();
-
-      if (contentType.indexOf('image/') === 0) {
-        var blob = await response.blob();
-        postCapturedBlob(blob, captureId);
-        return;
-      }
-
-      var text = await response.text();
-      var nextUrl = extractDownloadUrl(text);
-      if (!nextUrl) {
-        throw new Error('Unable to resolve next Gemini download URL');
-      }
-      currentUrl = nextUrl;
-    }
-
-    throw new Error('Gemini download chain exceeded expected length');
-  }
-
   function consumePendingCaptureId() {
     return pendingCaptureIds.length > 0 ? pendingCaptureIds.shift() : null;
   }
@@ -133,9 +107,7 @@
           return;
         }
 
-        captureFromDownloadChain(downloadUrl, captureId).catch(function (error) {
-          console.warn('[Banana Pick] Gemini XHR capture failed:', error);
-        });
+        console.warn('[Banana Pick] Gemini XHR capture failed:', new TypeError('Failed to fetch'));
       }, { once: true });
     }
 

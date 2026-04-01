@@ -2,13 +2,15 @@ import type { ImageInfo } from '../../types';
 import type { DownloadDispatcher, SiteAdapter } from './types';
 import { preloadLazyContent, sleep } from './viewport';
 
-const ARTIFACT_BUTTON_SELECTOR = 'button.artifact-button-content';
+const ARTIFACT_BUTTON_SELECTOR =
+    'button.artifact-button-content, button.artifact-stretched-button[aria-description*="Infographic"], button.artifact-stretched-button[aria-description*="信息图"]';
 const ARTIFACT_TITLE_SELECTOR = '.artifact-title';
 const ARTIFACT_ICON_SELECTOR = '.artifact-icon';
-const ARTIFACT_VIEWER_SELECTOR = '.artifact-viewer-container-dialog';
+const ARTIFACT_VIEWER_SELECTOR =
+    '.artifact-viewer-container-dialog, dialog[open], [role="dialog"], .cdk-dialog-container';
 const ARTIFACT_MODAL_CLOSE_SELECTOR = 'button[aria-label="Close"]';
 const ARTIFACT_IMAGE_SELECTOR =
-    'infographic-viewer img, .artifact-content img[src*="/notebooklm/"], .artifact-content img[src*="/rd-notebooklm/"]';
+    'infographic-viewer img, .artifact-content img[src*="/notebooklm/"], .artifact-content img[src*="/rd-notebooklm/"], dialog img[src*="/notebooklm/"], dialog img[src*="/rd-notebooklm/"], [role="dialog"] img[src*="/notebooklm/"], [role="dialog"] img[src*="/rd-notebooklm/"]';
 
 const INFOGRAPHIC_DESCRIPTION_PATTERN = /infographic|信息图/i;
 const INFOGRAPHIC_ICON_KEY = 'stacked_bar_chart';
@@ -19,8 +21,7 @@ function decodeBase64Url(input: string): string {
     return atob(padded);
 }
 
-function extractArtifactId(button: HTMLButtonElement): string {
-    const jslog = button.getAttribute('jslog') ?? '';
+export function extractArtifactIdFromJslog(jslog: string): string {
     const match = jslog.match(/;0:([A-Za-z0-9_\-=+/]+)/);
     if (!match) {
         return '';
@@ -36,7 +37,11 @@ function extractArtifactId(button: HTMLButtonElement): string {
     }
 }
 
-function normalizeTitle(rawTitle: string): string {
+function extractArtifactId(button: HTMLButtonElement): string {
+    return extractArtifactIdFromJslog(button.getAttribute('jslog') ?? '');
+}
+
+export function normalizeTitle(rawTitle: string): string {
     return rawTitle
         .replace(/\s+/g, ' ')
         .replace(/more_vert/gi, '')
@@ -44,11 +49,41 @@ function normalizeTitle(rawTitle: string): string {
         .trim();
 }
 
+function getArtifactLabelRoot(button: HTMLButtonElement): HTMLElement | null {
+    const labelledBy = button.getAttribute('aria-labelledby');
+    if (!labelledBy) {
+        return null;
+    }
+
+    return document.getElementById(labelledBy);
+}
+
+function extractPrimaryText(rawText: string): string {
+    const lines = rawText
+        .split('\n')
+        .map((line) => normalizeTitle(line))
+        .filter(Boolean);
+
+    return lines[0] ?? '';
+}
+
 function extractArtifactTitle(button: HTMLButtonElement, fallbackIndex: number): string {
     const titleElement = button.querySelector<HTMLElement>(ARTIFACT_TITLE_SELECTOR);
     const titleText = normalizeTitle(titleElement?.textContent ?? '');
     if (titleText) {
         return titleText;
+    }
+
+    const labelRoot = getArtifactLabelRoot(button);
+    const labelTitleElement = labelRoot?.querySelector<HTMLElement>(ARTIFACT_TITLE_SELECTOR);
+    const labelTitleText = normalizeTitle(labelTitleElement?.textContent ?? '');
+    if (labelTitleText) {
+        return labelTitleText;
+    }
+
+    const primaryLabelText = extractPrimaryText(labelRoot?.textContent ?? '');
+    if (primaryLabelText) {
+        return primaryLabelText;
     }
 
     const fullText = normalizeTitle(button.innerText || button.textContent || '');
@@ -59,18 +94,26 @@ function extractArtifactTitle(button: HTMLButtonElement, fallbackIndex: number):
     return `信息图_${fallbackIndex + 1}`;
 }
 
-function isInfographicButton(button: HTMLButtonElement): boolean {
-    const description = button.getAttribute('aria-description') || '';
+export function isInfographicMetadata(
+    description: string,
+    iconText: string,
+    bodyText: string,
+): boolean {
     if (INFOGRAPHIC_DESCRIPTION_PATTERN.test(description)) {
         return true;
     }
 
-    const iconText = (button.querySelector(ARTIFACT_ICON_SELECTOR)?.textContent || '').trim().toLowerCase();
-    if (iconText === INFOGRAPHIC_ICON_KEY) {
+    if (iconText.trim().toLowerCase() === INFOGRAPHIC_ICON_KEY) {
         return true;
     }
 
-    return (button.innerText || '').toLowerCase().includes(INFOGRAPHIC_ICON_KEY);
+    return bodyText.toLowerCase().includes(INFOGRAPHIC_ICON_KEY);
+}
+
+function isInfographicButton(button: HTMLButtonElement): boolean {
+    const description = button.getAttribute('aria-description') || '';
+    const iconText = button.querySelector(ARTIFACT_ICON_SELECTOR)?.textContent || '';
+    return isInfographicMetadata(description, iconText, button.innerText || '');
 }
 
 function getInfographicButtons(): HTMLButtonElement[] {
@@ -165,7 +208,7 @@ function findArtifactButton(image: ImageInfo): HTMLButtonElement | null {
     return buttons[image.id] ?? null;
 }
 
-function scanNotebookInfographics(): ImageInfo[] {
+export function scanNotebookInfographics(): ImageInfo[] {
     const buttons = getInfographicButtons();
     const seen = new Set<string>();
     const images: ImageInfo[] = [];

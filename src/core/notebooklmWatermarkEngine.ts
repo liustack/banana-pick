@@ -23,6 +23,12 @@ interface ComponentStats {
     pixels: number[];
 }
 
+export interface NotebookLmMutableImageData {
+    data: Uint8ClampedArray;
+    width: number;
+    height: number;
+}
+
 interface ColumnSamples {
     r: Uint8ClampedArray;
     g: Uint8ClampedArray;
@@ -30,16 +36,19 @@ interface ColumnSamples {
     a: Uint8ClampedArray;
 }
 
-const REFERENCE_WIDTH = 2752;
-const REFERENCE_HEIGHT = 1536;
+const REFERENCE_LONG_SIDE = 2752;
+const REFERENCE_SHORT_SIDE = 1536;
 // NOTE: NotebookLM reference projects define watermark bbox in PDF-space points.
 // Exported image pixels are effectively ~2x that coordinate system.
 const WATERMARK_WIDTH = 230;
 const WATERMARK_HEIGHT = 60;
 const MARGIN_RIGHT = 10;
 const MARGIN_BOTTOM = 10;
-const SAMPLE_TOP_START = 20;
-const SAMPLE_TOP_END = 4;
+const SAMPLE_BOTTOM_MAX_HEIGHT = 18;
+const LANDSCAPE_FALLBACK_FILL_WIDTH_RATIO = 0.9;
+const LANDSCAPE_FALLBACK_FILL_HEIGHT_RATIO = 0.64;
+const PORTRAIT_FALLBACK_FILL_WIDTH_RATIO = 1;
+const PORTRAIT_FALLBACK_FILL_HEIGHT_RATIO = 0.6;
 
 const DIFF_MIN_THRESHOLD = 18;
 const DIFF_MAX_THRESHOLD = 52;
@@ -54,12 +63,19 @@ function pixelOffset(width: number, x: number, y: number): number {
     return (y * width + x) * 4;
 }
 
-function resolveFillRegion(width: number, height: number): FillRegion {
-    const scale = clamp(
-        Math.min(width / REFERENCE_WIDTH, height / REFERENCE_HEIGHT),
+function resolveImageScale(width: number, height: number): number {
+    const shortSide = Math.min(width, height);
+    const longSide = Math.max(width, height);
+
+    return clamp(
+        Math.min(shortSide / REFERENCE_SHORT_SIDE, longSide / REFERENCE_LONG_SIDE),
         0.55,
         2.2,
     );
+}
+
+function resolveFillRegion(width: number, height: number): FillRegion {
+    const scale = resolveImageScale(width, height);
 
     const wmWidth = clamp(Math.round(WATERMARK_WIDTH * scale), 96, width - 2);
     const wmHeight = clamp(Math.round(WATERMARK_HEIGHT * scale), 28, height - 2);
@@ -71,13 +87,52 @@ function resolveFillRegion(width: number, height: number): FillRegion {
     const x1 = clamp(x2 - wmWidth, 0, x2 - 1);
     const y1 = clamp(y2 - wmHeight, 0, y2 - 1);
 
-    const sampleTop = Math.max(2, Math.round(SAMPLE_TOP_START * scale));
-    const sampleBottom = Math.max(1, Math.round(SAMPLE_TOP_END * scale));
-
-    const sampleY1 = clamp(y1 - sampleTop, 0, y1);
-    const sampleY2 = clamp(y1 - sampleBottom, sampleY1 + 1, y1 + 1);
+    const sampleHeight = Math.max(1, Math.round(SAMPLE_BOTTOM_MAX_HEIGHT * scale));
+    const sampleY1 = clamp(y2, 0, height - 1);
+    const sampleY2 = clamp(y2 + sampleHeight, sampleY1 + 1, height);
 
     return { x1, y1, x2, y2, sampleY1, sampleY2 };
+}
+
+export function getNotebookLmFillRegion(width: number, height: number): FillRegion {
+    return resolveFillRegion(width, height);
+}
+
+function resolveFallbackFillRegion(
+    width: number,
+    height: number,
+    region: FillRegion,
+): FillRegion {
+    const widthRatio =
+        height > width
+            ? PORTRAIT_FALLBACK_FILL_WIDTH_RATIO
+            : LANDSCAPE_FALLBACK_FILL_WIDTH_RATIO;
+    const regionHeight = region.y2 - region.y1;
+    const heightRatio =
+        height > width
+            ? PORTRAIT_FALLBACK_FILL_HEIGHT_RATIO
+            : LANDSCAPE_FALLBACK_FILL_HEIGHT_RATIO;
+    const regionWidth = region.x2 - region.x1;
+    const fallbackWidth = clamp(
+        Math.round(regionWidth * widthRatio),
+        72,
+        regionWidth,
+    );
+    const fallbackHeight = clamp(
+        Math.round(regionHeight * heightRatio),
+        24,
+        regionHeight,
+    );
+
+    return {
+        ...region,
+        x1: region.x2 - fallbackWidth,
+        y1: region.y2 - fallbackHeight,
+    };
+}
+
+export function getNotebookLmFallbackFillRegion(width: number, height: number): FillRegion {
+    return resolveFallbackFillRegion(width, height, resolveFillRegion(width, height));
 }
 
 function resolveDetectionRoi(
@@ -101,7 +156,10 @@ function resolveDetectionRoi(
     return { x1, y1, x2, y2 };
 }
 
-function buildColumnSamples(imageData: ImageData, region: FillRegion): ColumnSamples {
+function buildColumnSamples(
+    imageData: NotebookLmMutableImageData,
+    region: FillRegion,
+): ColumnSamples {
     const { data, width } = imageData;
     const sampleWidth = region.x2 - region.x1;
     const r = new Uint8ClampedArray(sampleWidth);
@@ -140,7 +198,7 @@ function buildColumnSamples(imageData: ImageData, region: FillRegion): ColumnSam
             continue;
         }
 
-        const fallbackY = Math.max(0, region.y1 - 1);
+        const fallbackY = Math.max(0, region.y2 - 1);
         const fallbackOffset = pixelOffset(width, x, fallbackY);
         r[col] = data[fallbackOffset];
         g[col] = data[fallbackOffset + 1];
@@ -151,7 +209,7 @@ function buildColumnSamples(imageData: ImageData, region: FillRegion): ColumnSam
     return { r, g, b, a };
 }
 
-function buildGrayRoi(imageData: ImageData, roi: DetectionRoi): Uint8Array {
+function buildGrayRoi(imageData: NotebookLmMutableImageData, roi: DetectionRoi): Uint8Array {
     const { data, width } = imageData;
     const roiWidth = roi.x2 - roi.x1;
     const roiHeight = roi.y2 - roi.y1;
@@ -333,7 +391,7 @@ function dilateMask(mask: Uint8Array, width: number, height: number, iterations:
 }
 
 function buildWatermarkMask(
-    imageData: ImageData,
+    imageData: NotebookLmMutableImageData,
     roi: DetectionRoi,
     fillRegion: FillRegion,
 ): Uint8Array | null {
@@ -460,7 +518,7 @@ function countMaskPixelsInFillRegion(
 }
 
 function applyMaskedFill(
-    imageData: ImageData,
+    imageData: NotebookLmMutableImageData,
     region: FillRegion,
     roi: DetectionRoi,
     mask: Uint8Array,
@@ -501,7 +559,7 @@ function applyMaskedFill(
 }
 
 function applyFullRegionFill(
-    imageData: ImageData,
+    imageData: NotebookLmMutableImageData,
     region: FillRegion,
     samples: ColumnSamples,
 ): void {
@@ -541,9 +599,36 @@ function applyFullRegionFill(
  *
  * Strategy:
  * 1) Detect likely watermark pixels in bottom-right ROI with local-difference mask.
- * 2) Replace masked pixels using per-column background sampling.
+ * 2) Replace masked pixels using the clean bottom strip below the watermark.
  * 3) Fallback to full region column fill when mask quality is not trustworthy.
  */
+export function removeNotebookLmWatermarkFromImageData(
+    imageData: NotebookLmMutableImageData,
+): NotebookLmMutableImageData {
+    const { width, height } = imageData;
+    const fillRegion = resolveFillRegion(width, height);
+    const fallbackRegion = resolveFallbackFillRegion(width, height, fillRegion);
+    const samples = buildColumnSamples(imageData, fillRegion);
+    const detectionRoi = resolveDetectionRoi(width, height, fillRegion);
+    const mask = buildWatermarkMask(imageData, detectionRoi, fillRegion);
+
+    if (mask) {
+        const regionArea = (fillRegion.x2 - fillRegion.x1) * (fillRegion.y2 - fillRegion.y1);
+        const maskedArea = countMaskPixelsInFillRegion(mask, detectionRoi, fillRegion);
+        const ratio = maskedArea / Math.max(1, regionArea);
+
+        if (ratio >= MASK_AREA_RATIO_MIN && ratio <= MASK_AREA_RATIO_MAX) {
+            applyMaskedFill(imageData, fillRegion, detectionRoi, mask, samples);
+        } else {
+            applyFullRegionFill(imageData, fallbackRegion, samples);
+        }
+    } else {
+        applyFullRegionFill(imageData, fallbackRegion, samples);
+    }
+
+    return imageData;
+}
+
 export async function removeNotebookLmWatermarkFromBlob(blob: Blob): Promise<Blob> {
     const bitmap = await createImageBitmap(blob);
     const { width, height } = bitmap;
@@ -559,25 +644,7 @@ export async function removeNotebookLmWatermarkFromBlob(blob: Blob): Promise<Blo
     bitmap.close();
 
     const imageData = ctx.getImageData(0, 0, width, height);
-    const fillRegion = resolveFillRegion(width, height);
-    const samples = buildColumnSamples(imageData, fillRegion);
-    const detectionRoi = resolveDetectionRoi(width, height, fillRegion);
-    const mask = buildWatermarkMask(imageData, detectionRoi, fillRegion);
-
-    if (mask) {
-        const regionArea = (fillRegion.x2 - fillRegion.x1) * (fillRegion.y2 - fillRegion.y1);
-        const maskedArea = countMaskPixelsInFillRegion(mask, detectionRoi, fillRegion);
-        const ratio = maskedArea / Math.max(1, regionArea);
-
-        if (ratio >= MASK_AREA_RATIO_MIN && ratio <= MASK_AREA_RATIO_MAX) {
-            applyMaskedFill(imageData, fillRegion, detectionRoi, mask, samples);
-        } else {
-            applyFullRegionFill(imageData, fillRegion, samples);
-        }
-    } else {
-        applyFullRegionFill(imageData, fillRegion, samples);
-    }
-
+    removeNotebookLmWatermarkFromImageData(imageData);
     ctx.putImageData(imageData, 0, 0);
     return canvas.convertToBlob({ type: 'image/png' });
 }

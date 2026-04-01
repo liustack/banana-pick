@@ -32,7 +32,7 @@ function nextCaptureId(): string {
     return `gbd_cap_${Date.now()}_${captureSequence}`;
 }
 
-function normalizeImageKey(url: string): string {
+export function normalizeImageKey(url: string): string {
     if (!url) {
         return '';
     }
@@ -43,7 +43,7 @@ function normalizeImageKey(url: string): string {
     return query ? `${normalizedPath}?${query}` : normalizedPath;
 }
 
-function extractGeminiToken(url: string): string {
+export function extractGeminiToken(url: string): string {
     const match = url.match(/\/(?:rd-gg(?:-dl)?|gg(?:-dl)?|aip-dl)\/([^=?/#]+)/i);
     return match?.[1] ?? '';
 }
@@ -140,7 +140,7 @@ function rewriteSizeToken(url: string, target: string): string {
     return `${url.slice(0, queryOrHashIndex)}${target}${url.slice(queryOrHashIndex)}`;
 }
 
-function toFullSizeUrl(url: string): string {
+export function toFullSizeUrl(url: string): string {
     return rewriteSizeToken(url, '=s0');
 }
 
